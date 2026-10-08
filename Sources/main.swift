@@ -869,6 +869,7 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Send
     private var cursorTimer: Timer?
     private var tick = 0
     private var overShared = false
+    private var lastBlocker = ""     // what last hid the pointer, for the log
     private var loggedFrame = false
 
     static func configuration(for filter: SCContentFilter) -> SCStreamConfiguration {
@@ -1025,6 +1026,11 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Send
               let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
         else { return false }
         let me = ProcessInfo.processInfo.processIdentifier
+        // While you're working in the shared app, a window from some other, inactive app can only
+        // be on top of it if it forces itself there: typically an invisible overlay such as a Teams
+        // meeting's share border. Look through those instead of hiding the pointer.
+        let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let workingInSharedApp = frontPID.map { sharedWindowOwners.contains($0) || sharedPIDs.contains($0) } ?? false
         for w in list { // front to back
             guard let pid = w[kCGWindowOwnerPID as String] as? pid_t, pid != me,
                   let b = w[kCGWindowBounds as String] as? NSDictionary,
@@ -1038,9 +1044,18 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Send
                 if (w[kCGWindowOwnerName as String] as? String) == "Dock" { return false }
                 continue // floating overlays (Grammarly etc.) are usually invisible and click-through
             }
-            return false // another app's window is on top
+            if workingInSharedApp && pid != frontPID { continue }
+            noteBlocker(w[kCGWindowOwnerName as String] as? String ?? "?")
+            return false // another app's window (or another window of the same app) is on top
         }
         return false
+    }
+
+    /// Logs what hides the pointer on the TV, once per change, so odd cases are easy to spot.
+    private func noteBlocker(_ owner: String) {
+        guard owner != lastBlocker else { return }
+        lastBlocker = owner
+        log("pointer hidden on the TV: \(owner) window is on top of the shared window")
     }
 }
 
