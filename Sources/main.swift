@@ -1945,6 +1945,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
         panel.level = .floating
+        panel.hidesOnDeactivate = false // menu bar app: don't vanish while another app is active
         panel.isReleasedWhenClosed = false
         panel.contentView = NSHostingView(rootView: SkinnedAirPlayPickerView(model: model))
         model.onPick = { [weak self] name in self?.connectAirPlay(name) }
@@ -2230,6 +2231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
         panel.level = .floating
+        panel.hidesOnDeactivate = false // menu bar app: don't vanish while another app is active
         panel.isReleasedWhenClosed = false
         panel.contentView = NSHostingView(rootView: SkinnedChooserView(model: model))
         model.onDone = { [weak self, weak panel] result in
@@ -2402,6 +2404,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
         panel.level = .floating
+        panel.hidesOnDeactivate = false // menu bar app: don't vanish while another app is active
         panel.isReleasedWhenClosed = false
         model.isEditing = capture.stream != nil
         panel.contentView = NSHostingView(rootView: SkinnedWindowPickerView(model: model))
@@ -2721,6 +2724,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let panel = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
             panel.title = "WirePlay"; panel.titleVisibility = .hidden; panel.titlebarAppearsTransparent = true
             panel.isReleasedWhenClosed = false; panel.level = .floating
+            panel.hidesOnDeactivate = false // otherwise it hides again as soon as it's shown from the menu
             panel.contentView = NSHostingView(rootView: PresenterView(model: presenter))
             panel.setContentSize(panel.contentView!.fittingSize)
             // Put it where you last left it; the first time, on the laptop screen.
@@ -2733,7 +2737,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         guard let panel = presenterPanel else { return }
         capture.previewEnabled = true
-        panel.orderFrontRegardless()
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
     }
 
 }
