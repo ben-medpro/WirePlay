@@ -300,9 +300,15 @@ struct ExternalDisplay: Equatable {
     }
 
     /// AirPlay / Sidecar create virtual displays; those already have their own UI.
+    /// Not a real monitor to present on: AirPlay / Sidecar (they have their own UI), and
+    /// placeholder or virtual screens such as the nameless "unkn"/"virt" display some docks and
+    /// BetterDisplay create, or BetterDisplay's "Virtual – …" screens.
     var isVirtual: Bool {
         let n = hardwareName.lowercased()
-        return n.contains("airplay") || n.contains("sidecar")
+        if n.contains("airplay") || n.contains("sidecar") || n.hasPrefix("virtual") { return true }
+        let fourCC = { (v: UInt32) in String(bytes: withUnsafeBytes(of: v.bigEndian, Array.init), encoding: .ascii) ?? "" }
+        if fourCC(CGDisplayVendorNumber(id)) == "unkn" || fourCC(CGDisplayModelNumber(id)) == "virt" { return true }
+        return screen?.localizedName == nil && Store.shared.monitor(key)?.name == nil && !isMirrored // no name at all
     }
 
     static func online() -> [ExternalDisplay] {
@@ -1665,6 +1671,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SCCont
         }
 
         keepLoginItemCurrent()
+        // Placeholder "unkn"/"virt" displays were remembered by earlier versions; drop them.
+        for m in store.monitors where m.key.hasPrefix("\(0x756E6B6E)-") { store.forget(m.key); log("forgot placeholder display \(m.key)") }
         airPlay.start()
         rescan()
         if CommandLine.arguments.contains("--settings") { showSettings() }
@@ -1734,6 +1742,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SCCont
             } else if let screen = t.screen { output?.fit(to: screen); updateFence() }
         }
         for gone in known.subtracting(ids) { modes[gone] = nil }
+        // A chooser for a display that has gone away is stale: close it rather than leave it
+        // waiting (it once sat open for hours behind other windows).
+        if let d = chooserDisplay, !ids.contains(d.id) {
+            log("closing the chooser for \(d.name): display went away")
+            chooser?.close(); chooser = nil; chooserDisplay = nil
+        }
+        pendingChoosers.removeAll { !ids.contains($0.id) }
 
         for d in displays where !d.isVirtual { store.remember(d.key, name: d.screen?.localizedName) }
         store.connectedKeys = Set(displays.map(\.key))
