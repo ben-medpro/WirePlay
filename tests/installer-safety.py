@@ -43,20 +43,26 @@ def replacement_case(case):
     with tempfile.TemporaryDirectory(prefix="wireplay-install-check-") as directory:
         root = Path(directory)
         app, dest, events = root / "new.app", root / "installed.app", root / "events"
+        trash = root / "Trash"
         app.mkdir()
         dest.mkdir()
+        trash.mkdir()
         (app / "new-marker").write_text("new")
         (dest / "old-marker").write_text("old")
         result = subprocess.run(
             ["/bin/bash", "-c", STUBS],
-            env={"PATH": "/usr/bin:/bin", "INSTALLER": str(INSTALLER),
+            env={"PATH": "/usr/bin:/bin", "INSTALLER": str(INSTALLER), "WIREPLAY_TRASH": str(trash),
                  "APP": str(app), "DEST": str(dest), "EVENTS": str(events), "CASE": case},
             text=True, capture_output=True, timeout=10,
         )
         assert (result.returncode == 0) == (case == "success"), (case, result)
         old = list(root.rglob("old-marker"))
         assert len(old) == 1, (case, "previous app lost or duplicated", old)
-        if case in ("success", "rollback_failure", "evacuation_failure"):
+        if case == "success":
+            # The previous version goes to the Trash, and nothing is left beside the installed app.
+            assert old[0].parent.parent == trash and old[0].parent.name.startswith("WirePlay (previous version"), (case, old)
+            assert not [p for p in root.iterdir() if p.name.startswith(".WirePlay-install")], (case, "hidden copy left beside the app")
+        elif case in ("rollback_failure", "evacuation_failure"):
             assert old[0].parent.name == "previous-WirePlay.app", (case, old)
             assert str(old[0].parent) in result.stdout, (case, "backup location not reported")
         else:

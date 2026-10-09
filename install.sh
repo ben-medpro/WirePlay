@@ -12,8 +12,11 @@ wireplay_verify_app() {
 wireplay_quit_running() {
   if pgrep -x WirePlay >/dev/null; then
     # Give the app its normal shutdown path; never force-kill an active presentation.
-    osascript -e 'with timeout of 10 seconds' \
-      -e 'tell application id "dev.ben.WirePlay" to quit' -e 'end timeout' || return 1
+    if ! osascript -e 'with timeout of 10 seconds' \
+      -e 'tell application id "dev.ben.WirePlay" to quit' -e 'end timeout' >/dev/null; then
+      echo "Couldn't ask WirePlay to quit (macOS may have blocked it). Quit WirePlay from its menu bar icon, then run the installer again."
+      return 1
+    fi
     for ((attempt=0; attempt<20; attempt++)); do
       if ! pgrep -x WirePlay >/dev/null; then return 0; fi
       sleep 0.25
@@ -61,6 +64,12 @@ wireplay_replace_app() (
     exit 1
   fi
   echo "Installed app signature verified."
+  # Success: the previous version goes to the Trash (recoverable), not a hidden folder beside the
+  # app, where macOS could still register it (and its Control Center button) as a second copy.
+  if [[ -e "$BACKUP" || -L "$BACKUP" ]]; then
+    TRASHED="${WIREPLAY_TRASH:-$HOME/.Trash}/WirePlay (previous version $(date '+%Y-%m-%d %H.%M.%S')).app"
+    if mv "$BACKUP" "$TRASHED" 2>/dev/null; then echo "Previous version moved to the Trash."; else rm -rf "$BACKUP"; fi
+  fi
 )
 
 # Tests source only the functions; normal execution continues below.
@@ -108,14 +117,14 @@ wireplay_replace_app "$NEW_APP" "$DEST"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 OLD="$HOME/Applications/WirePlay.app"
 if [[ -d "$OLD" ]]; then
-  # Keep legacy copies recoverable, too; only remove their registration after success.
-  OLD_BACKUP=$(mktemp -d "$HOME/Applications/.WirePlay-previous.XXXXXX")
+  # The old ~/Applications copy goes to the Trash (recoverable); unregister it first so it can't
+  # keep a second Control Center button.
   pluginkit -r "$OLD/Contents/PlugIns/WirePlayControls.appex" 2>/dev/null || true
   "$LSREGISTER" -u "$OLD" 2>/dev/null || true
-  if mv "$OLD" "$OLD_BACKUP/WirePlay.app"; then
-    echo "Legacy copy preserved at: $OLD_BACKUP/WirePlay.app"
+  if mv "$OLD" "$HOME/.Trash/WirePlay (old copy from Applications $(date '+%Y-%m-%d %H.%M.%S')).app" 2>/dev/null; then
+    echo "Moved the old copy in ~/Applications to the Trash."
   else
-    echo "The legacy copy could not be moved and remains at: $OLD"
+    echo "The old copy could not be moved and remains at: $OLD"
   fi
 fi
 "$LSREGISTER" -f "$DEST" 2>/dev/null || true
