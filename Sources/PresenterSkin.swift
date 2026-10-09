@@ -27,13 +27,24 @@ private enum PresenterSkin {
 
 private struct SkinHeader: View {
     let detail: String
+    var onHide: (() -> Void)? = nil
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: "airplay.video").font(.system(size: 20, weight: .medium))
                 .foregroundStyle(PresenterSkin.accent).accessibilityHidden(true)
             Text("WirePlay").font(.system(size: 14, weight: .semibold))
             Spacer()
-            Text(detail).font(.system(size: 10, weight: .medium)).foregroundStyle(PresenterSkin.muted)
+            if let onHide {
+                // Hides the panel only; the presentation keeps running. Esc does the same.
+                Button(action: onHide) {
+                    Label("Hide Presenter Controls", systemImage: "eye.slash").font(.system(size: 11, weight: .medium))
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+                .keyboardShortcut(.cancelAction)
+                .help("Hide this window. The TV keeps showing your windows. Bring it back from the WirePlay menu.")
+            } else {
+                Text(detail).font(.system(size: 10, weight: .medium)).foregroundStyle(PresenterSkin.muted)
+            }
         }
         .padding(.leading, 84).padding(.trailing, 24).frame(height: 48)
         .background(PresenterSkin.panel)
@@ -70,6 +81,7 @@ final class PresenterModel: ObservableObject {
     var onBlank: () -> Void = {}
     var onStop: () -> Void = {}
     var onRetry: () -> Void = {}
+    var onHide: () -> Void = {}
 }
 
 struct PresenterView: View {
@@ -81,7 +93,7 @@ struct PresenterView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SkinHeader(detail: "PRESENTER")
+            SkinHeader(detail: "PRESENTER", onHide: { model.onHide() })
             VStack(alignment: .leading, spacing: 20) {
                 HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 6) {

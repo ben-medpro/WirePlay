@@ -1730,6 +1730,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         presenter.onFreeze = { [weak self] in self?.toggleFreeze() }
         presenter.onStop = { [weak self] in self?.stopWindows() }
         presenter.onRetry = { [weak self] in self?.stopOwnedAirPlay() }
+        presenter.onHide = { [weak self] in self?.hidePresenter() }
+        // The presenter pops up when you choose windows; clicking anywhere else (your shared
+        // window, the desktop, another app) puts it away again.
+        NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.hidePresenter()
+        }
         capture.onPreview = { [weak self] image in self?.presenter.preview = image }
         capture.onStopped = { [weak self] in self?.endWindowMode(showDesktop: false) }
         capture.onFailed = { [weak self] error in
@@ -2618,16 +2624,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             else if d.isMirrored { state = "Mirroring entire screen" }
             else { state = "Extended display" }
             menu.addItem(disabled("\(d.name) — \(state)"))
-            if d.airPlayReceiver == nil { menu.addItem(item("Change What’s Shown…", #selector(openChooser(_:)), d.id)) }
             if target == d {
                 menu.addItem(item(capture.stream == nil ? "Choose Windows…" : "Add or Remove Windows…", #selector(changeWindows), nil))
-                let blank = item("Blank Screen", #selector(toggleBlank), nil); blank.state = capture.blanked ? .on : .off
-                menu.addItem(blank)
-                menu.addItem(item("Presenter Controls…", #selector(showPresenter), nil))
-                let freeze = item("Freeze Frame", #selector(toggleFreeze), nil); freeze.state = capture.frozen ? .on : .off
-                menu.addItem(freeze)
-                menu.addItem(item("Stop Showing Windows", #selector(stopWindows), nil))
             }
+            if d.airPlayReceiver == nil { menu.addItem(item("Change What’s Shown…", #selector(openChooser(_:)), d.id)) }
             let whenConnected = NSMenuItem(title: "When Connected", action: nil, keyEquivalent: "")
             let sub = NSMenu()
             for r in Rule.allCases {
@@ -2640,9 +2640,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(whenConnected)
             menu.addItem(.separator())
         }
+        // The live controls for what's on the TV, in their own section.
+        if let t = target, capture.stream != nil {
+            menu.addItem(NSMenuItem.sectionHeader(title: "Presenting on \(t.name)"))
+            menu.addItem(item("Presenter Controls…", #selector(showPresenter), nil))
+            let blank = item("Blank Screen", #selector(toggleBlank), nil); blank.state = capture.blanked ? .on : .off
+            menu.addItem(blank)
+            let freeze = item("Freeze Frame", #selector(toggleFreeze), nil); freeze.state = capture.frozen ? .on : .off
+            menu.addItem(freeze)
+            menu.addItem(item(airPlayReceiver.map { "Stop AirPlay to “\($0)”" } ?? "Stop Showing Windows", #selector(stopWindows), nil))
+            menu.addItem(.separator())
+        }
         // AirPlay
         if let name = airPlayReceiver {
-            menu.addItem(item("Stop AirPlay to “\(name)”", #selector(stopAirPlay), nil))
+            if capture.stream == nil { menu.addItem(item("Stop AirPlay to “\(name)”", #selector(stopAirPlay), nil)) }
         } else if let pending = pendingAirPlay {
             menu.addItem(disabled("Connecting to “\(pending.name)”…"))
         } else {
@@ -2659,7 +2670,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             airPlayItem.submenu = sub
             menu.addItem(airPlayItem)
         }
-        menu.addItem(.separator())
+        if menu.items.last?.isSeparatorItem != true { menu.addItem(.separator()) }
         menu.addItem(disabled("WirePlay \(appVersion)"))
         let s = item("Settings…", #selector(showSettings), nil); s.keyEquivalent = ","
         menu.addItem(s)
@@ -2717,6 +2728,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         presenter.busy = stoppingAirPlay
         presenter.stopTitle = airPlayReceiver == nil ? "Stop sharing" : "Stop AirPlay"
         presenter.status = capture.blanked ? "Output blank" : capture.frozen ? "Frame frozen" : presenter.windows.isEmpty ? "Choose windows" : "Presenting"
+    }
+
+    private func hidePresenter() {
+        guard presenterPanel?.isVisible == true else { return }
+        presenterPanel?.orderOut(nil)
+        capture.previewEnabled = false
     }
 
     @objc private func showPresenter() {
